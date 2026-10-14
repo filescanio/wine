@@ -184,6 +184,9 @@ static RTL_BITMAP tls_bitmap;
 static RTL_BITMAP tls_expansion_bitmap;
 
 static WINE_MODREF *cached_modref;
+/* the main exe, as LdrpImageEntry on Windows: PEB->ImageBaseAddress and the module's DllBase may be changed
+ * by the application (e.g. reflective loaders), so they can't be used to look it up later */
+static WINE_MODREF *exe_modref;
 static WINE_MODREF *current_modref;
 static WINE_MODREF *last_failed_modref;
 
@@ -3403,10 +3406,8 @@ NTSTATUS WINAPI LdrGetDllFullName( HMODULE module, UNICODE_STRING *name )
 
     TRACE( "module %p, name %p.\n", module, name );
 
-    if (!module) module = NtCurrentTeb()->Peb->ImageBaseAddress;
-
     RtlEnterCriticalSection( &loader_section );
-    wm = get_modref( module );
+    wm = module ? get_modref( module ) : exe_modref;
     if (wm)
     {
         RtlCopyUnicodeString( name, &wm->ldr.FullDllName );
@@ -3863,7 +3864,7 @@ void WINAPI LdrShutdownThread(void)
     RtlProcessFlsData( NtCurrentTeb()->FlsSlots, 1 );
 
     RtlEnterCriticalSection( &loader_section );
-    wm = get_modref( NtCurrentTeb()->Peb->ImageBaseAddress );
+    wm = exe_modref;
 
     mark = &NtCurrentTeb()->Peb->LdrData->InInitializationOrderModuleList;
     for (entry = mark->Blink; entry != mark; entry = entry->Blink)
@@ -4372,7 +4373,7 @@ void loader_init( CONTEXT *context, void **entry )
 
         if (NtCurrentTeb()->WowTebOffset) init_wow64( context );
 
-        wm = build_main_module();
+        exe_modref = wm = build_main_module();
         build_ntdll_module();
 #ifdef __arm64ec__
         load_arm64ec_module();
@@ -4414,7 +4415,7 @@ void loader_init( CONTEXT *context, void **entry )
 #ifdef __arm64ec__
         arm64ec_thread_init();
 #endif
-        wm = get_modref( NtCurrentTeb()->Peb->ImageBaseAddress );
+        wm = exe_modref;
     }
 
     NtCurrentTeb()->FlsSlots = fls_alloc_data();
