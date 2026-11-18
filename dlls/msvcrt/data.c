@@ -50,6 +50,7 @@ double MSVCRT__HUGE = 0;
 char **MSVCRT___argv = NULL;
 wchar_t **MSVCRT___wargv = NULL;
 static wchar_t **wargv_expand;
+static char **initial_argv, **argv_expand;
 char *MSVCRT__acmdln = NULL;
 wchar_t *MSVCRT__wcmdln = NULL;
 char **MSVCRT__environ = NULL;
@@ -337,7 +338,7 @@ void msvcrt_init_args(void)
   initial_wargv  = cmdline_to_argv( GetCommandLineW(), &initial_argc );
   MSVCRT___argc  = initial_argc;
   MSVCRT___wargv = initial_wargv;
-  MSVCRT___argv  = build_argv( initial_wargv );
+  MSVCRT___argv  = initial_argv = build_argv( initial_wargv );
 
   TRACE("got %s, wide = %s argc=%d\n", debugstr_a(MSVCRT__acmdln),
         debugstr_w(MSVCRT__wcmdln),MSVCRT___argc);
@@ -387,7 +388,8 @@ void msvcrt_init_args(void)
 void msvcrt_free_args(void)
 {
   /* FIXME: more things to free */
-  HeapFree(GetProcessHeap(), 0, MSVCRT___argv);
+  HeapFree(GetProcessHeap(), 0, initial_argv);
+  HeapFree(GetProcessHeap(), 0, argv_expand);
   HeapFree(GetProcessHeap(), 0, MSVCRT__pgmptr);
   HeapFree(GetProcessHeap(), 0, MSVCRT__wpgmptr);
   HeapFree(GetProcessHeap(), 0, wargv_expand);
@@ -507,14 +509,15 @@ int CDECL __getmainargs(int *argc, char** *argv, char** *envp,
             build_expanded_wargv(&wargc_expand, wargv_expand);
 
             MSVCRT___argc = wargc_expand;
-            MSVCRT___argv = build_argv( wargv_expand );
+            HeapFree(GetProcessHeap(), 0, argv_expand);
+            MSVCRT___argv = argv_expand = build_argv( wargv_expand );
         }else {
             expand_wildcards = 0;
         }
     }
     if (!expand_wildcards) {
         MSVCRT___argc = initial_argc;
-        MSVCRT___argv = build_argv( initial_wargv );
+        MSVCRT___argv = initial_argv;
     }
 
     *argc = MSVCRT___argc;
